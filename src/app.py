@@ -10,6 +10,7 @@ from llama_index.core.agent import ReActAgent
 from llama_index.llms.openai import OpenAI
 from llama_index.core.storage.chat_store import SimpleChatStore
 from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.tools.yahoo_finance import YahooFinanceToolSpec
 from llama_index.readers.file import CSVReader
 import tempfile
 import json
@@ -18,7 +19,7 @@ from pathlib import Path
 import tabula
 
 def main():
-    st.title("Granite")
+    st.title("Omega")
 
     # Upload button for file
     uploaded_file = st.file_uploader("Upload File")
