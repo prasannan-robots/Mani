@@ -1,34 +1,42 @@
+"""Load a directory of documents into a LlamaIndex vector index.
+
+The previous version imported a non-existent ``llama`` package and called
+methods that don't exist; this uses the real LlamaIndex API.
+"""
 
 import os
 from pathlib import Path
-from llama import Llama
 
-def load_files_to_llama_index(directory, ignore_file):
-    # Initialize Llama index
-    index = Llama()
+from llama_index.core import Document, VectorStoreIndex
 
-    # Read .granignore file
-    ignore_path = Path(directory) / ignore_file
-    if ignore_path.exists():
-        with open(ignore_path, 'r') as f:
-            ignore_files = f.read().splitlines()
-    else:
-        ignore_files = []
 
-    # Walk through the directory
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            # Ignore files listed in .granignore
-            if file not in ignore_files:
-                file_path = os.path.join(root, file)
-                with open(file_path, 'r') as f:
-                    content = f.read()
-                # Add file content to Llama index
-                index.add_document(content)
+def load_files_to_index(directory: str, ignore_file: str = ".granignore") -> VectorStoreIndex:
+    """Build a VectorStoreIndex from the text files under ``directory``.
 
-    return index
+    File names (one per line) listed in ``ignore_file`` are skipped.
+    """
+    root = Path(directory)
+    ignore_path = root / ignore_file
+    ignored = set(ignore_path.read_text().splitlines()) if ignore_path.exists() else set()
 
-# Usage
-directory = 'your_directory'
-ignore_file = '.granignore'
-index = load_files_to_llama_index(directory, ignore_file)
+    documents = []
+    for current, _dirs, files in os.walk(root):
+        for name in files:
+            if name in ignored or name == ignore_file:
+                continue
+            path = Path(current) / name
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue  # skip binary or unreadable files
+            documents.append(Document(text=text, metadata={"file_path": str(path)}))
+
+    return VectorStoreIndex.from_documents(documents)
+
+
+if __name__ == "__main__":
+    import sys
+
+    directory = sys.argv[1] if len(sys.argv) > 1 else "data"
+    index = load_files_to_index(directory)
+    print(index.as_query_engine().query("Summarise these documents."))

@@ -1,45 +1,69 @@
+"""Omega - a financial-advisor chatbot (Streamlit + LlamaIndex ReAct agent).
+
+The agent can pull live data through the Yahoo Finance tools. Run with:
+    streamlit run src/app.py
+Set OPENAI_API_KEY in the environment or a .env file.
+"""
+
+import os
+
 import streamlit as st
 from dotenv import load_dotenv
+
 load_dotenv()
-from llama_index.core import VectorStoreIndex
-from llama_index.core.agent import ReActAgent
-from llama_index.llms.openai import OpenAI
-from llama_index.core.tools import QueryEngineTool, ToolMetadata
-from llama_index.core.storage.chat_store import SimpleChatStore
-from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.tools.yahoo_finance import YahooFinanceToolSpec
-prompt='''You are a financial advisor who is looking to provide investment advice to a client. Help the client with choosing the right investment option with their budget'''
-tool_spec = YahooFinanceToolSpec()
-llm = OpenAI(model="gpt-3.5-turbo-instruct")
-agent = ReActAgent.from_tools(tool_spec.to_tool_list(), llm=llm, verbose=True,context=prompt)
-print(agent.get_prompts())
+
+SYSTEM_PROMPT = (
+    "You are Omega, a careful financial assistant. Help the user understand "
+    "investment options for their budget and goals. Use the available tools to "
+    "look up live market data when relevant. Always remind the user that this "
+    "is general information, not personalised financial advice, and that "
+    "investments carry risk."
+)
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+
+@st.cache_resource(show_spinner="Starting Omega…")
+def build_agent():
+    # Built lazily and cached so a missing key shows a friendly message
+    # instead of crashing the whole app at import time.
+    from llama_index.core.agent import ReActAgent
+    from llama_index.llms.openai import OpenAI
+    from llama_index.tools.yahoo_finance import YahooFinanceToolSpec
+
+    llm = OpenAI(model=MODEL)
+    tools = YahooFinanceToolSpec().to_tool_list()
+    return ReActAgent.from_tools(tools, llm=llm, verbose=True, context=SYSTEM_PROMPT)
+
+
 def main():
-    st.title("Omega")
-    
-    # Initialize chat history
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
+    st.set_page_config(page_title="Omega · Financial assistant", page_icon="📈")
+    st.title("📈 Omega")
+    st.caption("A financial assistant. General information only — not personalised advice.")
 
-    # User input
-    user_input = st.text_input("You: ", key="user_input")
-    # Submit button
-    if st.button("Send"):
-        if user_input:
-            # Append user input to chat history
-            st.session_state.chat_history.append(f"You: {user_input}")
-            # Here you can add the logic to get the response from the chatbot
-            # For now, we'll just echo the user input as a response
-            
-            response = agent.chat(user_input)
-            
-            response = f"Bot: {response}"
-            st.session_state.chat_history.append(response)
-            # Clear the input box
-        
+    if not os.getenv("OPENAI_API_KEY"):
+        st.error("Set `OPENAI_API_KEY` in your environment or a `.env` file to start.")
+        st.stop()
 
-    # Display chat history
-    for message in st.session_state.chat_history:
-        st.write(message)
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if user_input := st.chat_input("Ask about stocks, funds or budgeting…"):
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+        with st.chat_message("assistant"):
+            try:
+                with st.spinner("Thinking…"):
+                    answer = str(build_agent().chat(user_input))
+            except Exception as error:  # network/API/tool failures shouldn't crash the app
+                answer = f"Sorry, something went wrong: {error}"
+            st.markdown(answer)
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+
 
 if __name__ == "__main__":
     main()
